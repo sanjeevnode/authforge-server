@@ -105,7 +105,11 @@ chmod 600 .env.prod
 ### 5. Start the app stack
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
-docker compose -f docker-compose.prod.yml --env-file .env.prod exec app uv run alembic upgrade head
+```
+The schema is created from the models on app startup (no Alembic) — the first
+boot against an empty DB creates every table. Also set in `.env.prod`:
+```
+OAUTH_ISSUER=https://server.authforge.sanjeevnode.in   # id_token `iss` claim
 ```
 
 ### 6. Host nginx + HTTPS
@@ -132,8 +136,13 @@ ssh authforge
 cd ~/authforge-server
 git pull
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
-# only if migrations changed:
-docker compose -f docker-compose.prod.yml --env-file .env.prod exec app uv run alembic upgrade head
+```
+New TABLES are auto-created on startup. New COLUMNS on existing tables are NOT
+(create_all never alters). This Phase 4 upgrade adds `org_id`/`role` to `users`,
+so an existing DB needs a rebuild:
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod down -v   # drops the DB volume
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 ```
 
 ---

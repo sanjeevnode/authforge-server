@@ -1,13 +1,31 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.core.logging import setup_logging
-from app.routers import auth, devices, mfa, sessions
+from app.database import Base, engine
+
+# Import every model so it registers on Base.metadata before create_all runs.
+from app.models import organization, oauth, recovery_code, refresh_token, trusted_device, user  # noqa: F401
+from app.routers import auth, clients, devices, mfa, oauth as oauth_router, sessions
 
 setup_logging()
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # No Alembic — this is a fresh, single-owner deployment, so the schema is
+    # created directly from the models on startup. Idempotent: create_all only
+    # adds tables that don't already exist.
+    # ponytail: fine for a solo/greenfield DB; reintroduce Alembic if this ever
+    # needs in-place schema changes on data you can't drop.
+    Base.metadata.create_all(bind=engine)
+    yield
+
 app = FastAPI(
+    lifespan=lifespan,
     title="AuthForge Identity Server",
     version="0.1.0",
     description=(
@@ -25,6 +43,8 @@ app = FastAPI(
         {"name": "mfa", "description": "TOTP-based multi-factor auth: setup, QR, verify, disable, recovery codes."},
         {"name": "sessions", "description": "List and revoke active login sessions (device, IP, last active)."},
         {"name": "devices", "description": "Trusted devices that skip MFA; revoke to force MFA again."},
+        {"name": "oauth", "description": "OAuth2 / OIDC: AuthForge as an Identity Provider (authorize, token, userinfo)."},
+        {"name": "oauth-clients", "description": "Register and manage the third-party apps that may 'Sign in with AuthForge'."},
         {"name": "health", "description": "Liveness check."},
     ],
 )
@@ -41,6 +61,8 @@ app.include_router(auth.router)
 app.include_router(mfa.router)
 app.include_router(sessions.router)
 app.include_router(devices.router)
+app.include_router(oauth_router.router)
+app.include_router(clients.router)
 
 
 @app.get("/health", tags=["health"], summary="Liveness check")

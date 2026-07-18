@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     # --- MFA ---
     mfa_encryption_key: str  # Fernet key; encrypts the TOTP secret at rest
 
+    # --- OAuth2 / OIDC (AuthForge as an Identity Provider) ---
+    # `iss` claim in id_tokens; must match what relying parties expect.
+    oauth_issuer: str = "http://localhost:8000"
+    # How long an authorization code is valid before it must be exchanged.
+    oauth_code_expire_seconds: int = 300  # 5 min (RFC recommends short)
+    oauth_access_token_expire_minutes: int = 60
+
     # --- Logging ---
     log_level: str = "INFO"
 

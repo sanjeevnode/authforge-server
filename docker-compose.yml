@@ -45,7 +45,8 @@ services:
       - "8000:8000"
 
     volumes:
-      - ./app:/app/app
+      - .:/app                # whole project synced host<->container (alembic, pyproject, app)
+      - /app/.venv            # anonymous volume shields the container's venv from the host mount
 
     depends_on:
       postgres:

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 
 from app.config import settings
 from app.core.logging import setup_logging
-from app.routers import auth, mfa
+from app.routers import auth, devices, mfa, sessions
 
 setup_logging()
 
@@ -22,12 +22,16 @@ app = FastAPI(
     openapi_tags=[
         {"name": "auth", "description": "Registration, login, token refresh/rotation, logout, and current-user."},
         {"name": "mfa", "description": "TOTP-based multi-factor auth: setup, QR, verify, disable, recovery codes."},
+        {"name": "sessions", "description": "List and revoke active login sessions (device, IP, last active)."},
+        {"name": "devices", "description": "Trusted devices that skip MFA; revoke to force MFA again."},
         {"name": "health", "description": "Liveness check."},
     ],
 )
 
 app.include_router(auth.router)
 app.include_router(mfa.router)
+app.include_router(sessions.router)
+app.include_router(devices.router)
 
 
 @app.get("/health", tags=["health"], summary="Liveness check")

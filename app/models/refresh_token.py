@@ -22,6 +22,14 @@ class RefreshToken(Base):
     # rotation/logout flips this instead of deleting the row (audit trail).
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # --- Session context (Phase 3) ---
+    # This row IS a session: one login = one refresh token + its device info.
+    device_name: Mapped[str | None] = mapped_column(String, nullable=True)  # "Chrome on Windows"
+    ip_address: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_active_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     user: Mapped["User"] = relationship(back_populates="refresh_tokens")
 
 

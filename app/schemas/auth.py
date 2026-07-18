@@ -33,3 +33,4 @@ class MfaChallengeResponse(BaseModel):
 class LoginMfaRequest(BaseModel):
     mfa_token: str
     code: str                           # 6-digit OTP or a recovery code
+    remember_device: bool = False       # "remember this device for 30 days" -> skip MFA next time

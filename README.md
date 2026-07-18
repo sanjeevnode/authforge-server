@@ -64,6 +64,24 @@ All endpoints under `/api/v1`. Errors always return
 | POST | `/disable` | Disable MFA (requires password **and** current OTP) |
 | GET | `/recovery` | Count of remaining recovery codes |
 
+### Sessions (`/api/v1/sessions`, protected)
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `` | List active sessions (device name, IP, last active; `is_current` via `X-Refresh-Token` header) |
+| DELETE | `/{id}` | Revoke one session |
+| DELETE | `` | Revoke all sessions except the current one |
+
+### Devices (`/api/v1/devices`, protected)
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `` | List trusted devices (skip MFA for 30 days) |
+| DELETE | `/{id}` | Revoke trust → forces MFA on next login from that device |
+
+**Trusted-device MFA skip:** at login, a device with a valid trust record skips the
+OTP step. Trust is created by passing `remember_device: true` to `/auth/login/mfa`.
+
 ---
 
 ## Project structure

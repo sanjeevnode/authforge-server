@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
 
+    # --- MFA ---
+    mfa_encryption_key: str  # Fernet key; encrypts the TOTP secret at rest
+
     # --- Logging ---
     log_level: str = "INFO"
 

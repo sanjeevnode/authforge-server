@@ -5,8 +5,10 @@ Error convention (from the plan): every error body is
 so clients switch on `code`, never parse `detail`.
 """
 
+import uuid
 from datetime import timedelta
 
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,18 +18,25 @@ from app.core.deps import get_current_user
 from app.core.rate_limit import enforce_rate_limit
 from app.core.security import (
     create_access_token,
+    create_mfa_token,
+    decode_mfa_token,
     generate_refresh_token,
     hash_token,
     verify_password,
 )
 from app.core.time import utc_now
-from app.repositories.user import create_user, get_user_by_email
+from app.core.totp import verify_code
+from app.core.crypto import decrypt_secret
+from app.repositories.user import create_user, get_user_by_email, get_user_by_id
+from app.repositories import recovery_code as recovery_repo
 from app.database import get_db
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.schemas.auth import (
+    LoginMfaRequest,
     LoginRequest,
     LogoutRequest,
+    MfaChallengeResponse,
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
@@ -78,24 +87,53 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)) -> User:
 
 @router.post(
     "/login",
-    response_model=TokenResponse,
+    response_model=TokenResponse | MfaChallengeResponse,
     summary="Log in with email + password",
-    description="Returns an access token (15 min) and a rotating refresh token (7 days).",
+    description="Without MFA: returns an access + refresh token pair. With MFA enabled: "
+    "returns {mfa_required, mfa_token}; finish at /login/mfa.",
     responses={
         401: {"description": "Invalid email or password (code INVALID_CREDENTIALS)"},
         429: {"description": "Too many attempts (code RATE_LIMITED)"},
     },
 )
-def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
+def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     # 5 attempts / 15 min per IP+email combo (plan spec).
     client_ip = request.client.host if request.client else "unknown"
     enforce_rate_limit(f"login:{client_ip}:{body.email}", limit=5, window_seconds=15 * 60)
 
     user = get_user_by_email(db, body.email)
-    # Verify even when the user is missing? We short-circuit here for simplicity.
     if user is None or not verify_password(body.password, user.password_hash):
         raise _error(status.HTTP_401_UNAUTHORIZED, "INVALID_CREDENTIALS",
                      "Invalid email or password.")
+
+    # MFA on -> don't issue real tokens yet; hand back a short-lived challenge.
+    if user.mfa_enabled:
+        return MfaChallengeResponse(mfa_token=create_mfa_token(user.id))
+    return _issue_tokens(db, user)
+
+
+@router.post(
+    "/login/mfa",
+    response_model=TokenResponse,
+    summary="Complete MFA login",
+    description="Exchange the mfa_token + a valid OTP (or a recovery code) for a full "
+    "token pair.",
+    responses={401: {"description": "Invalid mfa_token or code (code INVALID_MFA / INVALID_OTP)"}},
+)
+def login_mfa(body: LoginMfaRequest, db: Session = Depends(get_db)) -> TokenResponse:
+    try:
+        payload = decode_mfa_token(body.mfa_token)
+        user = get_user_by_id(db, uuid.UUID(payload["sub"]))
+    except (jwt.PyJWTError, KeyError, ValueError):
+        user = None
+    if user is None or not user.mfa_enabled or user.mfa_secret is None:
+        raise _error(status.HTTP_401_UNAUTHORIZED, "INVALID_MFA", "MFA session is invalid or expired.")
+
+    # Accept a live OTP, or fall back to consuming a one-time recovery code.
+    otp_ok = verify_code(decrypt_secret(user.mfa_secret), body.code)
+    if not otp_ok and not recovery_repo.consume_code(db, user.id, body.code):
+        raise _error(status.HTTP_401_UNAUTHORIZED, "INVALID_OTP", "Invalid OTP or recovery code.")
+
     return _issue_tokens(db, user)
 
 

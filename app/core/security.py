@@ -58,6 +58,29 @@ def decode_access_token(token: str) -> dict:
     return payload
 
 
+# --- MFA token (short-lived, single-purpose) ------------------------------
+
+def create_mfa_token(user_id: str) -> str:
+    """A 2-minute JWT usable ONLY at /login/mfa. type='mfa' so it can't be
+    replayed as an access token."""
+    now = utc_now()
+    payload = {
+        "sub": str(user_id),
+        "iat": now,
+        "exp": now + timedelta(minutes=2),
+        "type": "mfa",
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+
+
+def decode_mfa_token(token: str) -> dict:
+    """Verify an mfa_token. Raises jwt.PyJWTError on any problem."""
+    payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+    if payload.get("type") != "mfa":
+        raise jwt.InvalidTokenError("wrong token type")
+    return payload
+
+
 # --- Refresh token (opaque, not a JWT) ------------------------------------
 
 def generate_refresh_token() -> str:

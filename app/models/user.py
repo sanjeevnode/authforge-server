@@ -14,6 +14,10 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # MFA. mfa_secret is Fernet-encrypted (reversible), nullable until enabled.
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    mfa_secret: Mapped[str | None] = mapped_column(String, nullable=True)
+
     # ORM convenience: user.refresh_tokens -> list of that user's tokens.
     # cascade delete-orphan: deleting a user removes their tokens too.
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(

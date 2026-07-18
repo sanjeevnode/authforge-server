@@ -2,7 +2,7 @@ from fastapi import FastAPI
 
 from app.config import settings
 from app.core.logging import setup_logging
-from app.routers import auth
+from app.routers import auth, mfa
 
 setup_logging()
 
@@ -21,11 +21,13 @@ app = FastAPI(
     ),
     openapi_tags=[
         {"name": "auth", "description": "Registration, login, token refresh/rotation, logout, and current-user."},
+        {"name": "mfa", "description": "TOTP-based multi-factor auth: setup, QR, verify, disable, recovery codes."},
         {"name": "health", "description": "Liveness check."},
     ],
 )
 
 app.include_router(auth.router)
+app.include_router(mfa.router)
 
 
 @app.get("/health", tags=["health"], summary="Liveness check")

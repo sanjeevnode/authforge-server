@@ -12,6 +12,7 @@ from app.database import Base
 # Anything not imported here is invisible to --autogenerate.
 from app.models.user import User  # noqa: F401
 from app.models.refresh_token import RefreshToken  # noqa: F401
+from app.models.recovery_code import RecoveryCode  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

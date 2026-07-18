@@ -7,7 +7,7 @@ we can flag which session is the current one (and protect it from bulk revoke).
 
 import uuid
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -40,9 +40,9 @@ def _active_sessions(db: Session, user_id: uuid.UUID) -> list[RefreshToken]:
 def list_sessions(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    x_refresh_token: str | None = Header(default=None),
+    authforge_refresh: str | None = Cookie(default=None),
 ):
-    current_hash = hash_token(x_refresh_token) if x_refresh_token else None
+    current_hash = hash_token(authforge_refresh) if authforge_refresh else None
     rows = _active_sessions(db, current_user.id)
     items = [
         SessionItem.model_validate(r).model_copy(
@@ -81,9 +81,9 @@ def revoke_session(
 def revoke_others(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    x_refresh_token: str | None = Header(default=None),
+    authforge_refresh: str | None = Cookie(default=None),
 ):
-    current_hash = hash_token(x_refresh_token) if x_refresh_token else None
+    current_hash = hash_token(authforge_refresh) if authforge_refresh else None
     for row in _active_sessions(db, current_user.id):
         if row.token_hash != current_hash:
             row.revoked = True

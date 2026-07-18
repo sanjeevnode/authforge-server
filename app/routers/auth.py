@@ -9,11 +9,12 @@ import uuid
 from datetime import timedelta
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.cookies import clear_refresh_cookie, set_refresh_cookie
 from app.core.deps import get_current_user
 from app.core.rate_limit import enforce_rate_limit
 from app.core.security import (
@@ -53,16 +54,19 @@ def _error(status_code: int, code: str, detail: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"detail": detail, "code": code})
 
 
-def _issue_tokens(db: Session, user: User, request: Request | None = None) -> TokenResponse:
-    """Create an access token + a fresh refresh token (= a session row), storing
-    only the refresh token's hash. Captures device/IP for the sessions list."""
+def _issue_tokens(
+    db: Session, user: User, response: Response, request: Request | None = None
+) -> TokenResponse:
+    """Create an access token + a fresh refresh token (= a session row). The refresh
+    token is set as an httpOnly cookie; only the access token is returned in the body."""
     ua = request.headers.get("user-agent") if request else None
     ip = request.client.host if request and request.client else None
     now = utc_now()
+    raw_refresh = generate_refresh_token()
     db.add(
         RefreshToken(
             user_id=user.id,
-            token_hash=hash_token(raw_refresh := generate_refresh_token()),
+            token_hash=hash_token(raw_refresh),
             expires_at=now + timedelta(days=settings.refresh_token_expire_days),
             device_name=device_name_from_ua(ua),
             ip_address=ip,
@@ -70,10 +74,8 @@ def _issue_tokens(db: Session, user: User, request: Request | None = None) -> To
         )
     )
     db.commit()
-    return TokenResponse(
-        access_token=create_access_token(user.id),
-        refresh_token=raw_refresh,
-    )
+    set_refresh_cookie(response, raw_refresh)
+    return TokenResponse(access_token=create_access_token(user.id))
 
 
 def _is_trusted_device(db: Session, user_id, request: Request) -> bool:
@@ -116,7 +118,7 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)) -> User:
         429: {"description": "Too many attempts (code RATE_LIMITED)"},
     },
 )
-def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
+def login(body: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     # 5 attempts / 15 min per IP+email combo (plan spec).
     client_ip = request.client.host if request.client else "unknown"
     enforce_rate_limit(f"login:{client_ip}:{body.email}", limit=5, window_seconds=15 * 60)
@@ -129,7 +131,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     # MFA on -> challenge, UNLESS this device is trusted (then skip straight to tokens).
     if user.mfa_enabled and not _is_trusted_device(db, user.id, request):
         return MfaChallengeResponse(mfa_token=create_mfa_token(user.id))
-    return _issue_tokens(db, user, request)
+    return _issue_tokens(db, user, response, request)
 
 
 @router.post(
@@ -140,7 +142,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     "token pair.",
     responses={401: {"description": "Invalid mfa_token or code (code INVALID_MFA / INVALID_OTP)"}},
 )
-def login_mfa(body: LoginMfaRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
+def login_mfa(body: LoginMfaRequest, request: Request, response: Response, db: Session = Depends(get_db)) -> TokenResponse:
     try:
         payload = decode_mfa_token(body.mfa_token)
         user = get_user_by_id(db, uuid.UUID(payload["sub"]))
@@ -169,7 +171,7 @@ def login_mfa(body: LoginMfaRequest, request: Request, db: Session = Depends(get
         )
         db.commit()
 
-    return _issue_tokens(db, user, request)
+    return _issue_tokens(db, user, response, request)
 
 
 @router.post(
@@ -180,16 +182,27 @@ def login_mfa(body: LoginMfaRequest, request: Request, db: Session = Depends(get
     "pair is issued. Reusing a revoked/expired token fails.",
     responses={401: {"description": "Invalid/expired/revoked token (code INVALID_REFRESH_TOKEN)"}},
 )
-def refresh(body: RefreshRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
+def refresh(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    body: RefreshRequest | None = None,
+    authforge_refresh: str | None = Cookie(default=None),
+) -> TokenResponse:
+    # Prefer the httpOnly cookie; fall back to a body token (Flutter/curl clients).
+    raw = authforge_refresh or (body.refresh_token if body else None)
+    if not raw:
+        raise _error(status.HTTP_401_UNAUTHORIZED, "INVALID_REFRESH_TOKEN",
+                     "No refresh token provided.")
     stored = db.scalar(
-        select(RefreshToken).where(RefreshToken.token_hash == hash_token(body.refresh_token))
+        select(RefreshToken).where(RefreshToken.token_hash == hash_token(raw))
     )
     if stored is None or stored.revoked or stored.expires_at <= utc_now():
         raise _error(status.HTTP_401_UNAUTHORIZED, "INVALID_REFRESH_TOKEN",
                      "Refresh token is invalid, expired, or already used.")
     stored.revoked = True                      # rotate: kill the old one
     db.commit()
-    return _issue_tokens(db, stored.user, request)
+    return _issue_tokens(db, stored.user, response, request)
 
 
 @router.post(
@@ -198,14 +211,24 @@ def refresh(body: RefreshRequest, request: Request, db: Session = Depends(get_db
     summary="Log out (revoke a refresh token)",
     description="Revokes the given refresh token so it can no longer be refreshed.",
 )
-def logout(body: LogoutRequest, db: Session = Depends(get_db)) -> None:
-    stored = db.scalar(
-        select(RefreshToken).where(RefreshToken.token_hash == hash_token(body.refresh_token))
-    )
-    if stored and not stored.revoked:
-        stored.revoked = True
-        db.commit()
-    # 204 regardless — logging out an already-invalid token is not an error.
+def logout(
+    response: Response,
+    db: Session = Depends(get_db),
+    body: LogoutRequest | None = None,
+    authforge_refresh: str | None = Cookie(default=None),
+) -> Response:
+    raw = authforge_refresh or (body.refresh_token if body else None)
+    if raw:
+        stored = db.scalar(
+            select(RefreshToken).where(RefreshToken.token_hash == hash_token(raw))
+        )
+        if stored and not stored.revoked:
+            stored.revoked = True
+            db.commit()
+    # Clear the cookie and return 204 regardless (idempotent logout).
+    resp = Response(status_code=status.HTTP_204_NO_CONTENT)
+    clear_refresh_cookie(resp)
+    return resp
 
 
 @router.get(

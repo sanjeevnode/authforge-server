@@ -14,6 +14,7 @@ class UserResponse(BaseModel):
     id: uuid.UUID
     email: EmailStr
     is_verified: bool
+    mfa_enabled: bool
     created_at: datetime
 
     # Stored UTC -> shown IST, only at the edge (serialization).

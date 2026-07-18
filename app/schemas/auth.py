@@ -21,8 +21,8 @@ class LogoutRequest(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
+    # refresh token is delivered via httpOnly cookie, not the body
 
 
 class MfaChallengeResponse(BaseModel):

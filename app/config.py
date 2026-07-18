@@ -31,6 +31,16 @@ class Settings(BaseSettings):
         "http://localhost:5173,http://127.0.0.1:5173,https://app.authforge.sanjeevnode.in"
     )
 
+    # --- Refresh-token cookie ---
+    # httpOnly cookie holding the refresh token (JS can't read it -> XSS-safe).
+    refresh_cookie_name: str = "authforge_refresh"
+    # Shared parent domain so the cookie works across api. and app. subdomains.
+    # Empty in local dev (host-only cookie on localhost).
+    cookie_domain: str = ""
+    # secure=True + samesite=none needed for cross-site (prod). Local dev: lax/insecure.
+    cookie_secure: bool = False
+    cookie_samesite: str = "lax"
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

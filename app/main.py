@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.core.logging import setup_logging
@@ -26,6 +27,14 @@ app = FastAPI(
         {"name": "devices", "description": "Trusted devices that skip MFA; revoke to force MFA again."},
         {"name": "health", "description": "Liveness check."},
     ],
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,  # explicit allow-list, never "*"
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(auth.router)

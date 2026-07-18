@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     # --- Logging ---
     log_level: str = "INFO"
 
+    # --- CORS ---
+    # Comma-separated allow-list of Web Portal origins. Never "*".
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
     # Read from .env, ignore any extra vars in the file we haven't declared here
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

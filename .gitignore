@@ -8,6 +8,10 @@ wheels/
 
 # Virtual environments
 .venv
-.env
 .git
+
+# Secrets: ignore all .env* files, but keep the *.example templates
+.env
+.env.*
 !.env.example
+!.env.prod.example

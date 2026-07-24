@@ -8,8 +8,10 @@ from app.core.logging import setup_logging
 from app.database import Base, engine
 
 # Import every model so it registers on Base.metadata before create_all runs.
-from app.models import organization, oauth, recovery_code, refresh_token, trusted_device, user  # noqa: F401
-from app.routers import auth, clients, devices, mfa, oauth as oauth_router, sessions
+from app.models import (  # noqa: F401
+    encrypted_vault, organization, oauth, recovery_code, refresh_token, trusted_device, user,
+)
+from app.routers import auth, clients, devices, mfa, oauth as oauth_router, sessions, vault
 
 setup_logging()
 
@@ -45,6 +47,7 @@ app = FastAPI(
         {"name": "devices", "description": "Trusted devices that skip MFA; revoke to force MFA again."},
         {"name": "oauth", "description": "OAuth2 / OIDC: AuthForge as an Identity Provider (authorize, token, userinfo)."},
         {"name": "oauth-clients", "description": "Register and manage the third-party apps that may 'Sign in with AuthForge'."},
+        {"name": "vault", "description": "End-to-end-encrypted TOTP vault backup/restore (server stores ciphertext only)."},
         {"name": "health", "description": "Liveness check."},
     ],
 )
@@ -63,6 +66,7 @@ app.include_router(sessions.router)
 app.include_router(devices.router)
 app.include_router(oauth_router.router)
 app.include_router(clients.router)
+app.include_router(vault.router)
 
 
 @app.get("/health", tags=["health"], summary="Liveness check")

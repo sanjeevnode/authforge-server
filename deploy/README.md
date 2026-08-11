@@ -8,8 +8,8 @@ nginx routes by `server_name`, so sharing the box with two other projects does
 not change the public URL. The app listens on **8002**; kagazz has 8001 and
 planmytrip 8003.
 
-See `sanjeevnode/infra/README.md` for the box itself — provisioning, security
-groups, the RDS instance and the shared Redis.
+See `infra/README.md` at the projects root for the box itself — provisioning,
+security groups, the RDS instance and the shared Redis.
 
 ## First deploy
 

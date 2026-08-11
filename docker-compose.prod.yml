@@ -1,55 +1,33 @@
 # Production stack for EC2. Differences from docker-compose.yml (dev):
-#  - postgres/redis have NO host ports (internal-only, per security conventions)
+#  - no postgres service: the database is RDS (see DATABASE_URL in .env.prod)
+#  - no redis service: uses the shared instance in ~/shared, db 1
 #  - app has no bind mount and no --reload
-#  - nginx is the only service on 80/443
+#  - nginx runs natively on the host (see /etc/nginx), not in Docker
 #  - pgAdmin dropped (use an SSH tunnel if you ever need it)
 #
 # Run:  docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+#
+# This box also runs kagazz (8001) and planmytrip (8003), so the app is
+# published on 8002 — localhost only, so host-nginx can reach it and the public
+# internet cannot.
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    # no ports: -> reachable only by other compose services, never the public IP
-
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD}
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    # no ports: -> internal only
-
   app:
     build: .
     restart: unless-stopped
     env_file:
       - .env.prod
-    # Publish to localhost ONLY: host-nginx can reach it, the public internet cannot.
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8002:8000"
+    # The Dockerfile CMD ends in --reload, which must not run in production.
+    # This override is load-bearing, not redundant.
     command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    networks:
+      # External network owned by ~/shared/docker-compose.yml, which must be up
+      # first. Keeps Redis reachable by service name across compose projects.
+      - shared
 
-# nginx + certbot now run natively on the host (see /etc/nginx), not in Docker.
-
-volumes:
-  pgdata:
+networks:
+  shared:
+    external: true
+    name: shared

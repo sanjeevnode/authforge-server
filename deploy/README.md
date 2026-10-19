@@ -17,7 +17,8 @@ security groups, the RDS instance and the shared Redis.
 ssh sanjeevnode
 cd ~/authforge-server
 cp .env.prod.example .env.prod && nano .env.prod   # see below
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+docker compose -f docker-compose.prod.yml --env-file .env.prod pull
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 
 sudo cp deploy/nginx.conf /etc/nginx/sites-available/authforge-server
 sudo ln -sf /etc/nginx/sites-available/authforge-server /etc/nginx/sites-enabled/
@@ -34,11 +35,13 @@ Redis, and compose fails outright if the network does not exist.
 ```bash
 ssh sanjeevnode
 cd ~/authforge-server && git pull
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+docker compose -f docker-compose.prod.yml --env-file .env.prod pull
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 ```
 
-Build one project at a time. The box has 2GB of RAM plus a 2GB swapfile;
-three concurrent Python builds is what would OOM it.
+The image is built by `.github/workflows/image.yml` on every push and pulled
+from GHCR, so wait for that run to go green before pulling. The box has 1GB of
+RAM: `--build` here is an emergency fallback only, one project at a time.
 
 If the pull changed `deploy/nginx.conf`, copying it over the live file removes
 the TLS block certbot injected there. Re-run certbot afterwards:

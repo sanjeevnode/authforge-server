@@ -13,6 +13,8 @@
 
 services:
   app:
+    # Built by .github/workflows/image.yml; `build` stays as the fallback.
+    image: ghcr.io/sanjeevnode/authforge-server:latest
     build: .
     restart: unless-stopped
     env_file:

@@ -1,8 +1,8 @@
 name: image
 
-# Builds the production image and pushes it to GHCR. The box pulls it instead
-# of building: it has 1GB of RAM, and a Python dependency install is the
-# biggest memory spike it would ever see.
+# Builds the production image, pushes it to GHCR, then deploys it to the
+# sanjeevnode box. The box pulls instead of building: it has 1GB of RAM, and a
+# Python dependency install is the biggest memory spike it would ever see.
 on:
   push:
     branches: [master]
@@ -32,3 +32,15 @@ jobs:
             ghcr.io/${{ github.repository }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # The key is pinned on the box to `deploy.sh <this repo>` and nothing
+      # else (infra/deploy.sh at the projects root), so it cannot open a shell.
+      - name: Deploy
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          install -m 600 /dev/null ~/.ssh/deploy
+          echo "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
+          echo '13.206.92.19 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINJG9X3ksj8ToraURkF95X82ZQoA+3KOJc9a0GSGb3vv' > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy ubuntu@13.206.92.19

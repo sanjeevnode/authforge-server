@@ -39,9 +39,10 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod pull
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 ```
 
-The image is built by `.github/workflows/image.yml` on every push and pulled
-from GHCR, so wait for that run to go green before pulling. The box has 1GB of
-RAM: `--build` here is an emergency fallback only, one project at a time.
+Pushing deploys automatically: `.github/workflows/image.yml` builds the image,
+pushes it to GHCR and runs `~/shared/deploy.sh` on the box over a key that can
+do nothing else. The commands above are the manual equivalent. The box has 1GB
+of RAM: `--build` here is an emergency fallback only, one project at a time.
 
 If the pull changed `deploy/nginx.conf`, copying it over the live file removes
 the TLS block certbot injected there. Re-run certbot afterwards:
